@@ -1,0 +1,1041 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fintrix.local/schema/fintrix.schema.json",
+  "title": "FintrixContract",
+  "description": "Single source of truth for every message between engine, supervisor, gateway and browser. Wire encoding is MessagePack; fields typed Float32Array travel as msgpack bin (little-endian float32).",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "policy": {
+      "$ref": "#/$defs/Policy"
+    },
+    "runConfig": {
+      "$ref": "#/$defs/RunConfig"
+    },
+    "run": {
+      "$ref": "#/$defs/Run"
+    },
+    "runPage": {
+      "$ref": "#/$defs/RunPage"
+    },
+    "scenarioPage": {
+      "$ref": "#/$defs/ScenarioPage"
+    },
+    "createRunRequest": {
+      "$ref": "#/$defs/CreateRunRequest"
+    },
+    "runControlRequest": {
+      "$ref": "#/$defs/RunControlRequest"
+    },
+    "killWorkerRequest": {
+      "$ref": "#/$defs/KillWorkerRequest"
+    },
+    "benchmarkReport": {
+      "$ref": "#/$defs/BenchmarkReport"
+    },
+    "systemInfo": {
+      "$ref": "#/$defs/SystemInfo"
+    },
+    "apiError": {
+      "$ref": "#/$defs/ApiError"
+    },
+    "engineFrame": {
+      "$ref": "#/$defs/EngineFrame"
+    },
+    "clientMessage": {
+      "$ref": "#/$defs/ClientMessage"
+    }
+  },
+  "$defs": {
+    "RunId": {
+      "type": "string",
+      "pattern": "^run_[0-9a-z]{10,32}$"
+    },
+    "WorkerId": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 255
+    },
+    "BatchId": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "Seq": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Monotonic per run; used to resume a stream."
+    },
+    "EpochMs": {
+      "type": "number",
+      "minimum": 0
+    },
+    "Policy": {
+      "title": "Policy",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["interestRatePct", "marginRequirementPct", "circuitBreakerPct"],
+      "properties": {
+        "interestRatePct": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 20,
+          "default": 4.5,
+          "description": "Policy rate, % per year."
+        },
+        "marginRequirementPct": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 25,
+          "description": "Initial margin as % of position value."
+        },
+        "circuitBreakerPct": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 50,
+          "default": 7,
+          "description": "Halt trading when price moves this % from session open."
+        }
+      }
+    },
+    "RunConfig": {
+      "title": "RunConfig",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["policy", "agents", "instruments", "ticks", "scenarios", "seed"],
+      "properties": {
+        "policy": {
+          "$ref": "#/$defs/Policy"
+        },
+        "agents": {
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 1000000,
+          "default": 100000
+        },
+        "instruments": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64,
+          "default": 20
+        },
+        "ticks": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 1000000,
+          "default": 10000
+        },
+        "scenarios": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100000,
+          "default": 2000
+        },
+        "seed": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295,
+          "default": 42
+        },
+        "checkpointEvery": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 1000000,
+          "default": 1000,
+          "description": "Ticks between checkpoints."
+        }
+      }
+    },
+    "RunStatus": {
+      "title": "RunStatus",
+      "type": "string",
+      "enum": ["queued", "running", "paused", "recovering", "completed", "failed", "cancelled"]
+    },
+    "WorkerState": {
+      "title": "WorkerState",
+      "type": "string",
+      "enum": ["healthy", "late", "failed", "recovering", "idle"]
+    },
+    "RiskSummary": {
+      "title": "RiskSummary",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "var95",
+        "var99",
+        "es95",
+        "es99",
+        "volatility",
+        "maxDrawdown",
+        "circuitBreakerTriggers",
+        "cascadingDefaults"
+      ],
+      "properties": {
+        "var95": {
+          "type": "number",
+          "description": "95% VaR of portfolio loss, fraction of notional."
+        },
+        "var99": {
+          "type": "number"
+        },
+        "es95": {
+          "type": "number",
+          "description": "Expected shortfall beyond VaR95."
+        },
+        "es99": {
+          "type": "number"
+        },
+        "volatility": {
+          "type": "number",
+          "description": "Annualised volatility of mean price path."
+        },
+        "maxDrawdown": {
+          "type": "number"
+        },
+        "circuitBreakerTriggers": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cascadingDefaults": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Mean defaults per scenario."
+        }
+      }
+    },
+    "Run": {
+      "title": "Run",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "config", "status", "createdAt", "lastSeq"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/RunId"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "config": {
+          "$ref": "#/$defs/RunConfig"
+        },
+        "status": {
+          "$ref": "#/$defs/RunStatus"
+        },
+        "createdAt": {
+          "$ref": "#/$defs/EpochMs"
+        },
+        "startedAt": {
+          "$ref": "#/$defs/EpochMs"
+        },
+        "finishedAt": {
+          "$ref": "#/$defs/EpochMs"
+        },
+        "lastSeq": {
+          "$ref": "#/$defs/Seq"
+        },
+        "summary": {
+          "$ref": "#/$defs/RiskSummary"
+        },
+        "error": {
+          "$ref": "#/$defs/ApiError"
+        }
+      }
+    },
+    "ScenarioResult": {
+      "title": "ScenarioResult",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scenario",
+        "seed",
+        "loss",
+        "finalPrice",
+        "volatility",
+        "volume",
+        "maxDrawdown",
+        "circuitBreakerTriggers",
+        "defaults"
+      ],
+      "properties": {
+        "scenario": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "seed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "loss": {
+          "type": "number"
+        },
+        "finalPrice": {
+          "type": "number"
+        },
+        "volatility": {
+          "type": "number"
+        },
+        "volume": {
+          "type": "number"
+        },
+        "maxDrawdown": {
+          "type": "number"
+        },
+        "circuitBreakerTriggers": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "defaults": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "RunPage": {
+      "title": "RunPage",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["items", "nextCursor"],
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Run"
+          }
+        },
+        "nextCursor": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "ScenarioPage": {
+      "title": "ScenarioPage",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["items", "nextCursor", "total"],
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ScenarioResult"
+          }
+        },
+        "nextCursor": {
+          "type": ["string", "null"]
+        },
+        "total": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "CreateRunRequest": {
+      "title": "CreateRunRequest",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "config"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "config": {
+          "$ref": "#/$defs/RunConfig"
+        }
+      }
+    },
+    "RunControlRequest": {
+      "title": "RunControlRequest",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action"],
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": ["pause", "resume", "cancel"]
+        }
+      }
+    },
+    "KillWorkerRequest": {
+      "title": "KillWorkerRequest",
+      "description": "Demo-only fault injection.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["workerId", "atTick"],
+      "properties": {
+        "workerId": {
+          "$ref": "#/$defs/WorkerId"
+        },
+        "atTick": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "BenchmarkPoint": {
+      "title": "BenchmarkPoint",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "p", "seconds", "speedup", "efficiency", "scenariosPerSec"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["threads", "ranks", "gustafson", "checkpoint"]
+        },
+        "p": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Threads or ranks; checkpoint interval for kind=checkpoint."
+        },
+        "seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "speedup": {
+          "type": "number",
+          "minimum": 0
+        },
+        "efficiency": {
+          "type": "number",
+          "minimum": 0
+        },
+        "scenariosPerSec": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "BenchmarkReport": {
+      "title": "BenchmarkReport",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "measuredAt", "points", "serialFraction", "system"],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "measuredAt": {
+          "$ref": "#/$defs/EpochMs"
+        },
+        "points": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BenchmarkPoint"
+          }
+        },
+        "serialFraction": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Fitted Amdahl serial fraction."
+        },
+        "system": {
+          "$ref": "#/$defs/SystemInfo"
+        }
+      }
+    },
+    "SystemInfo": {
+      "title": "SystemInfo",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cores", "ramBytes", "compiler", "flags", "commit", "mpiAvailable", "engine"],
+      "properties": {
+        "cores": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "ramBytes": {
+          "type": "number",
+          "minimum": 0
+        },
+        "compiler": {
+          "type": "string"
+        },
+        "flags": {
+          "type": "string"
+        },
+        "commit": {
+          "type": "string"
+        },
+        "mpiAvailable": {
+          "type": "boolean"
+        },
+        "engine": {
+          "type": "string",
+          "enum": ["native", "mock"],
+          "description": "mock = clearly labelled synthetic generator."
+        }
+      }
+    },
+    "ApiError": {
+      "title": "ApiError",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message"],
+      "properties": {
+        "code": {
+          "type": "string",
+          "description": "Stable machine code, e.g. ENGINE_OOM."
+        },
+        "message": {
+          "type": "string",
+          "description": "Specific and actionable."
+        },
+        "details": {
+          "type": "object",
+          "additionalProperties": {
+            "type": ["string", "number", "boolean"]
+          }
+        }
+      }
+    },
+    "RunStartedFrame": {
+      "title": "RunStartedFrame",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "runId", "seq", "ts", "config", "workers"],
+      "properties": {
+        "type": {
+          "const": "run.started"
+        },
+        "runId": {
+          "$ref": "#/$defs/RunId"
+        },
+        "seq": {
+          "$ref": "#/$defs/Seq"
+        },
+        "ts": {
+          "$ref": "#/$defs/EpochMs"
+        },
+        "config": {
+          "$ref": "#/$defs/RunConfig"
+        },
+        "workers": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "RunStatusFrame": {
+      "title": "RunStatusFrame",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "runId", "seq", "ts", "status"],
+      "properties": {
+        "type": {
+          "const": "run.status"
+        },
+        "runId": {
+          "$ref": "#/$defs/RunId"
+        },
+        "seq": {
+          "$ref": "#/$defs/Seq"
+        },
+        "ts": {
+          "$ref": "#/$defs/EpochMs"
+        },
+        "status": {
+          "$ref": "#/$defs/RunStatus"
+        }
+      }
+    },
+    "BatchAssignedFrame": {
+      "title": "BatchAssignedFrame",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "runId",
+        "seq",
+        "ts",
+        "workerId",
+        "batchId",
+        "scenarioStart",
+        "scenarioCount"
+      ],
+      "properties": {
+        "type": {
+          "const": "batch.assigned"
+        },
+        "runId": {
+          "$ref": "#/$defs/RunId"
+        },
+        "seq": {
+          "$ref": "#/$defs/Seq"
+        },
+        "ts": {
+          "$ref": "#/$defs/EpochMs"
+        },
+        "workerId": {
+          "$ref": "#/$defs/WorkerId"
+        },
+        "batchId": {
+          "$ref": "#/$defs/BatchId"
+        },
+        "scenarioStart": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "scenarioCount": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "ProgressFrame": {
+      "title": "ProgressFrame",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "runId",
+        "seq",
+        "ts",
+        "scenariosDone",
+        "scenariosTotal",
+        "scenariosPerSec"
+      ],
+      "properties": {
+        "type": {
+          "const": "progress"
+        },
+        "runId": {
+          "$ref": "#/$defs/RunId"
+        },
+        "seq": {
+          "$ref": "#/$defs/Seq"
+        },
+        "ts": {
+          "$ref": "#/$defs/EpochMs"
+        },
+        "scenariosDone": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "scenariosTotal": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "scenariosPerSec": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "MetricsFrame": {
+      "title": "MetricsFrame",
+      "description": "Batched series. All arrays share length n; sample i is at tick tick0 + i*dt.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "runId",
+        "seq",
+        "ts",
+        "tick0",
+        "dt",
+        "p5",
+        "p50",
+        "p95",
+        "volume",
+        "volatility",
+        "var95"
+      ],
+      "properties": {
+        "type": {
+          "const": "metrics"
+        },
+        "runId": {
+          "$ref": "#/$defs/RunId"
+        },
+        "seq": {
+          "$ref": "#/$defs/Seq"
+        },
+        "ts": {
+          "$ref": "#/$defs/EpochMs"
+        },
+        "tick0": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "dt": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "p5": {
+          "tsType": "Float32Array",
+          "description": "5th percentile of price across completed scenarios."
+        },
+        "p50": {
+          "tsType": "Float32Array"
+        },
+        "p95": {
+          "tsType": "Float32Array"
+        },
+        "volume": {
+          "tsType": "Float32Array"
+        },
+        "volatility": {
+          "tsType": "Float32Array"
+        },
+        "var95": {
+          "tsType": "Float32Array",
+          "description": "Running VaR95 estimate (convergence curve)."
+        }
+      }
+    },
+    "HeartbeatFrame": {
+      "title": "HeartbeatFrame",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "runId", "seq", "ts", "workerId", "batchId", "tick", "threadUtil"],
+      "properties": {
+        "type": {
+          "const": "heartbeat"
+        },
+        "runId": {
+          "$ref": "#/$defs/RunId"
+        },
+        "seq": {
+          "$ref": "#/$defs/Seq"
+        },
+        "ts": {
+          "$ref": "#/$defs/EpochMs"
+        },
+        "workerId": {
+          "$ref": "#/$defs/WorkerId"
+        },
+        "batchId": {
+          "$ref": "#/$defs/BatchId"
+        },
+        "tick": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "threadUtil": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "CheckpointFrame": {
+      "title": "CheckpointFrame",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "runId", "seq", "ts", "workerId", "batchId", "tick", "bytes", "ms"],
+      "properties": {
+        "type": {
+          "const": "checkpoint"
+        },
+        "runId": {
+          "$ref": "#/$defs/RunId"
+        },
+        "seq": {
+          "$ref": "#/$defs/Seq"
+        },
+        "ts": {
+          "$ref": "#/$defs/EpochMs"
+        },
+        "workerId": {
+          "$ref": "#/$defs/WorkerId"
+        },
+        "batchId": {
+          "$ref": "#/$defs/BatchId"
+        },
+        "tick": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ms": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "WorkerFailedFrame": {
+      "title": "WorkerFailedFrame",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "runId",
+        "seq",
+        "ts",
+        "workerId",
+        "batchId",
+        "reason",
+        "detectedAfterMs",
+        "lastCheckpointTick",
+        "lastTick"
+      ],
+      "properties": {
+        "type": {
+          "const": "worker.failed"
+        },
+        "runId": {
+          "$ref": "#/$defs/RunId"
+        },
+        "seq": {
+          "$ref": "#/$defs/Seq"
+        },
+        "ts": {
+          "$ref": "#/$defs/EpochMs"
+        },
+        "workerId": {
+          "$ref": "#/$defs/WorkerId"
+        },
+        "batchId": {
+          "$ref": "#/$defs/BatchId"
+        },
+        "reason": {
+          "type": "string",
+          "enum": ["heartbeat_timeout", "watchdog", "exit"]
+        },
+        "exitCode": {
+          "type": "integer"
+        },
+        "detectedAfterMs": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Time from last heartbeat to detection."
+        },
+        "lastCheckpointTick": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "lastTick": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "FailoverStartedFrame": {
+      "title": "FailoverStartedFrame",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "runId",
+        "seq",
+        "ts",
+        "fromWorkerId",
+        "toWorkerId",
+        "batchId",
+        "resumeTick"
+      ],
+      "properties": {
+        "type": {
+          "const": "failover.started"
+        },
+        "runId": {
+          "$ref": "#/$defs/RunId"
+        },
+        "seq": {
+          "$ref": "#/$defs/Seq"
+        },
+        "ts": {
+          "$ref": "#/$defs/EpochMs"
+        },
+        "fromWorkerId": {
+          "$ref": "#/$defs/WorkerId"
+        },
+        "toWorkerId": {
+          "$ref": "#/$defs/WorkerId"
+        },
+        "batchId": {
+          "$ref": "#/$defs/BatchId"
+        },
+        "resumeTick": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "FailoverCompletedFrame": {
+      "title": "FailoverCompletedFrame",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "runId",
+        "seq",
+        "ts",
+        "toWorkerId",
+        "batchId",
+        "recoveryMs",
+        "ticksLost"
+      ],
+      "properties": {
+        "type": {
+          "const": "failover.completed"
+        },
+        "runId": {
+          "$ref": "#/$defs/RunId"
+        },
+        "seq": {
+          "$ref": "#/$defs/Seq"
+        },
+        "ts": {
+          "$ref": "#/$defs/EpochMs"
+        },
+        "toWorkerId": {
+          "$ref": "#/$defs/WorkerId"
+        },
+        "batchId": {
+          "$ref": "#/$defs/BatchId"
+        },
+        "recoveryMs": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Detection to resumed progress."
+        },
+        "ticksLost": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "lastTick - lastCheckpointTick, i.e. recomputed work."
+        }
+      }
+    },
+    "FailbackFrame": {
+      "title": "FailbackFrame",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "runId", "seq", "ts", "workerId"],
+      "properties": {
+        "type": {
+          "const": "failback"
+        },
+        "runId": {
+          "$ref": "#/$defs/RunId"
+        },
+        "seq": {
+          "$ref": "#/$defs/Seq"
+        },
+        "ts": {
+          "$ref": "#/$defs/EpochMs"
+        },
+        "workerId": {
+          "$ref": "#/$defs/WorkerId"
+        }
+      }
+    },
+    "RunCompletedFrame": {
+      "title": "RunCompletedFrame",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "runId", "seq", "ts", "status", "elapsedMs"],
+      "properties": {
+        "type": {
+          "const": "run.completed"
+        },
+        "runId": {
+          "$ref": "#/$defs/RunId"
+        },
+        "seq": {
+          "$ref": "#/$defs/Seq"
+        },
+        "ts": {
+          "$ref": "#/$defs/EpochMs"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["completed", "failed", "cancelled"]
+        },
+        "elapsedMs": {
+          "type": "number",
+          "minimum": 0
+        },
+        "summary": {
+          "$ref": "#/$defs/RiskSummary"
+        },
+        "error": {
+          "$ref": "#/$defs/ApiError"
+        }
+      }
+    },
+    "EngineFrame": {
+      "title": "EngineFrame",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/RunStartedFrame"
+        },
+        {
+          "$ref": "#/$defs/RunStatusFrame"
+        },
+        {
+          "$ref": "#/$defs/BatchAssignedFrame"
+        },
+        {
+          "$ref": "#/$defs/ProgressFrame"
+        },
+        {
+          "$ref": "#/$defs/MetricsFrame"
+        },
+        {
+          "$ref": "#/$defs/HeartbeatFrame"
+        },
+        {
+          "$ref": "#/$defs/CheckpointFrame"
+        },
+        {
+          "$ref": "#/$defs/WorkerFailedFrame"
+        },
+        {
+          "$ref": "#/$defs/FailoverStartedFrame"
+        },
+        {
+          "$ref": "#/$defs/FailoverCompletedFrame"
+        },
+        {
+          "$ref": "#/$defs/FailbackFrame"
+        },
+        {
+          "$ref": "#/$defs/RunCompletedFrame"
+        }
+      ]
+    },
+    "ClientMessage": {
+      "title": "ClientMessage",
+      "oneOf": [
+        {
+          "title": "SubscribeMessage",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "runId", "fromSeq"],
+          "properties": {
+            "type": {
+              "const": "subscribe"
+            },
+            "runId": {
+              "$ref": "#/$defs/RunId"
+            },
+            "fromSeq": {
+              "$ref": "#/$defs/Seq"
+            }
+          }
+        },
+        {
+          "title": "UnsubscribeMessage",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "runId"],
+          "properties": {
+            "type": {
+              "const": "unsubscribe"
+            },
+            "runId": {
+              "$ref": "#/$defs/RunId"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,151 @@
+openapi: 3.1.0
+info:
+  title: FinTrix Gateway API
+  version: 0.1.0
+  description: >
+    REST surface for config, history and export. Live data flows over the
+    MessagePack WebSocket at /ws (ClientMessage in, EngineFrame out).
+    All bodies are defined in fintrix.schema.json.
+servers:
+  - url: http://localhost:8787
+paths:
+  /api/runs:
+    get:
+      summary: List runs, newest first (cursor paginated)
+      parameters:
+        - { name: cursor, in: query, schema: { type: string } }
+        - {
+            name: limit,
+            in: query,
+            schema: { type: integer, minimum: 1, maximum: 200, default: 50 },
+          }
+        - { name: q, in: query, schema: { type: string, maxLength: 80 } }
+      responses:
+        '200':
+          {
+            description: Page,
+            content:
+              { application/json: { schema: { $ref: 'fintrix.schema.json#/$defs/RunPage' } } },
+          }
+    post:
+      summary: Create and queue a run
+      requestBody:
+        required: true
+        content:
+          { application/json: { schema: { $ref: 'fintrix.schema.json#/$defs/CreateRunRequest' } } }
+      responses:
+        '201':
+          {
+            description: Created,
+            content: { application/json: { schema: { $ref: 'fintrix.schema.json#/$defs/Run' } } },
+          }
+        '400': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/Error' }
+  /api/runs/{runId}:
+    parameters: [{ $ref: '#/components/parameters/RunId' }]
+    get:
+      summary: Get one run
+      responses:
+        '200':
+          {
+            description: Run,
+            content: { application/json: { schema: { $ref: 'fintrix.schema.json#/$defs/Run' } } },
+          }
+        '404': { $ref: '#/components/responses/Error' }
+    delete:
+      summary: Delete a finished run and its results
+      responses:
+        '204': { description: Deleted }
+        '409': { $ref: '#/components/responses/Error' }
+  /api/runs/{runId}/control:
+    parameters: [{ $ref: '#/components/parameters/RunId' }]
+    post:
+      summary: Pause, resume or cancel
+      requestBody:
+        required: true
+        content:
+          { application/json: { schema: { $ref: 'fintrix.schema.json#/$defs/RunControlRequest' } } }
+      responses:
+        '202': { description: Accepted }
+        '409': { $ref: '#/components/responses/Error' }
+  /api/runs/{runId}/kill-worker:
+    parameters: [{ $ref: '#/components/parameters/RunId' }]
+    post:
+      summary: Demo fault injection
+      requestBody:
+        required: true
+        content:
+          { application/json: { schema: { $ref: 'fintrix.schema.json#/$defs/KillWorkerRequest' } } }
+      responses:
+        '202': { description: Scheduled }
+        '409': { $ref: '#/components/responses/Error' }
+  /api/runs/{runId}/scenarios:
+    parameters: [{ $ref: '#/components/parameters/RunId' }]
+    get:
+      summary: Per-scenario results (cursor paginated)
+      parameters:
+        - { name: cursor, in: query, schema: { type: string } }
+        - {
+            name: limit,
+            in: query,
+            schema: { type: integer, minimum: 1, maximum: 5000, default: 1000 },
+          }
+      responses:
+        '200':
+          {
+            description: Page,
+            content:
+              { application/json: { schema: { $ref: 'fintrix.schema.json#/$defs/ScenarioPage' } } },
+          }
+  /api/runs/{runId}/export:
+    parameters: [{ $ref: '#/components/parameters/RunId' }]
+    get:
+      summary: Export results
+      parameters:
+        - {
+            name: format,
+            in: query,
+            required: true,
+            schema: { type: string, enum: [csv, json, brief] },
+          }
+      responses:
+        '200': { description: File download }
+  /api/benchmarks:
+    get:
+      summary: Latest measured benchmark report
+      responses:
+        '200':
+          {
+            description: Report,
+            content:
+              {
+                application/json:
+                  { schema: { $ref: 'fintrix.schema.json#/$defs/BenchmarkReport' } },
+              },
+          }
+        '404': { $ref: '#/components/responses/Error' }
+    post:
+      summary: Start a benchmark (progress streams over /ws)
+      responses:
+        '202': { description: Started }
+  /api/system:
+    get:
+      summary: Machine and engine info
+      responses:
+        '200':
+          {
+            description: Info,
+            content:
+              { application/json: { schema: { $ref: 'fintrix.schema.json#/$defs/SystemInfo' } } },
+          }
+components:
+  parameters:
+    RunId:
+      name: runId
+      in: path
+      required: true
+      schema: { $ref: 'fintrix.schema.json#/$defs/RunId' }
+  responses:
+    Error:
+      description: Specific, actionable error
+      content: { application/json: { schema: { $ref: 'fintrix.schema.json#/$defs/ApiError' } } }

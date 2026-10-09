@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="FinTrix: policy stress-testing on an HPC agent-based market simulator."
+    />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>FinTrix</title>
+    <script>
+      // Apply saved theme before first paint (no flash). Mirrors src/app/theme.ts.
+      try {
+        var p = JSON.parse(localStorage.getItem('fintrix.ui') || '{}');
+        var t =
+          p.theme === 'light'
+            ? 'light'
+            : p.theme === 'system' && matchMedia('(prefers-color-scheme: light)').matches
+              ? 'light'
+              : 'dark';
+        document.documentElement.dataset.theme = t;
+        document.documentElement.dataset.density =
+          p.density === 'compact' ? 'compact' : 'comfortable';
+      } catch (e) {}
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,106 @@
+@import 'tailwindcss';
+@import './tokens.css';
+
+/* Map tokens into Tailwind and remove its default palette/scales so one-off values cannot creep in. */
+@theme inline {
+  --color-*: initial;
+  --color-bg-0: hsl(var(--bg-0));
+  --color-bg-1: hsl(var(--bg-1));
+  --color-bg-2: hsl(var(--bg-2));
+  --color-bg-3: hsl(var(--bg-3));
+  --color-border-subtle: hsl(var(--border-subtle));
+  --color-border-strong: hsl(var(--border-strong));
+  --color-fg: hsl(var(--text-primary));
+  --color-fg-2: hsl(var(--text-secondary));
+  --color-fg-3: hsl(var(--text-muted));
+  --color-accent: hsl(var(--accent));
+  --color-accent-hover: hsl(var(--accent-hover));
+  --color-accent-fg: hsl(var(--accent-fg));
+  --color-accent-subtle: hsl(var(--accent-subtle));
+  --color-success: hsl(var(--success));
+  --color-warning: hsl(var(--warning));
+  --color-danger: hsl(var(--danger));
+  --color-info: hsl(var(--info));
+  --color-series-1: hsl(var(--series-1));
+  --color-series-2: hsl(var(--series-2));
+  --color-series-3: hsl(var(--series-3));
+  --color-series-4: hsl(var(--series-4));
+  --color-series-5: hsl(var(--series-5));
+  --color-series-6: hsl(var(--series-6));
+  --color-overlay: hsl(var(--overlay) / 0.6);
+  --color-transparent: transparent;
+
+  --font-*: initial;
+  --font-sans: var(--font-ui);
+  --font-mono: var(--font-mono);
+
+  --text-*: initial;
+  --text-xs: var(--fs-12);
+  --text-xs--line-height: 1rem;
+  --text-sm: var(--fs-13);
+  --text-sm--line-height: 1.125rem;
+  --text-base: var(--fs-14);
+  --text-base--line-height: 1.25rem;
+  --text-md: var(--fs-16);
+  --text-md--line-height: 1.5rem;
+  --text-lg: var(--fs-20);
+  --text-lg--line-height: 1.75rem;
+  --text-xl: var(--fs-28);
+  --text-xl--line-height: 2.25rem;
+
+  --spacing: var(--space);
+
+  --radius-*: initial;
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --radius-full: 9999px;
+
+  --shadow-*: initial;
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+
+  --ease-out: var(--ease-out);
+  --default-transition-duration: var(--dur-base);
+  --default-transition-timing-function: var(--ease-out);
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    background: hsl(var(--bg-0));
+    color: hsl(var(--text-primary));
+    font-family: var(--font-ui);
+    font-size: var(--fs-14);
+    line-height: 1.25rem;
+    font-feature-settings: 'cv11', 'ss01';
+    -webkit-font-smoothing: antialiased;
+  }
+  :focus-visible {
+    outline: 2px solid hsl(var(--accent));
+    outline-offset: 2px;
+  }
+  ::selection {
+    background: hsl(var(--accent) / 0.35);
+  }
+}
+
+/* Any number that updates live must not jitter. */
+@utility num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum', 'zero';
+}
+
+@utility h-control {
+  height: var(--control-h);
+}
+
+@utility h-row {
+  height: var(--row-h);
+}

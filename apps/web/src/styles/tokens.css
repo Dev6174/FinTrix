@@ -1,0 +1,127 @@
+/*
+ * FinTrix design tokens. The only place raw colour / size values live.
+ * Colours are bare HSL triplets so they compose with alpha: hsl(var(--accent) / 0.2).
+ * tokens.test.ts parses this file and enforces WCAG 2.2 AA contrast in both themes.
+ */
+
+:root,
+[data-theme='dark'] {
+  color-scheme: dark;
+
+  /* Surfaces: 0 = app background, 3 = raised/hover */
+  --bg-0: 224 26% 6%;
+  --bg-1: 224 22% 9%;
+  --bg-2: 224 19% 12%;
+  --bg-3: 224 16% 16%;
+
+  --border-subtle: 224 14% 19%;
+  --border-strong: 224 10% 44%;
+
+  --text-primary: 220 22% 94%;
+  --text-secondary: 220 13% 74%;
+  --text-muted: 220 10% 62%;
+
+  /* One accent: electric indigo */
+  --accent: 240 100% 74%;
+  --accent-hover: 240 100% 80%;
+  --accent-fg: 224 26% 6%;
+  --accent-subtle: 240 60% 22%;
+
+  --success: 152 56% 52%;
+  --warning: 38 92% 60%;
+  --danger: 0 86% 68%;
+  --info: 199 89% 62%;
+
+  /* Policy series, Okabe–Ito hues (colour-blind safe). Max 6. Same order everywhere. */
+  --series-1: 199 70% 62%;
+  --series-2: 36 100% 52%;
+  --series-3: 164 100% 38%;
+  --series-4: 326 46% 68%;
+  --series-5: 24 100% 58%;
+  --series-6: 56 80% 62%;
+
+  --shadow-color: 224 40% 2%;
+  --overlay: 224 30% 3%;
+}
+
+[data-theme='light'] {
+  color-scheme: light;
+
+  --bg-0: 220 20% 96%;
+  --bg-1: 0 0% 100%;
+  --bg-2: 220 20% 98%;
+  --bg-3: 220 16% 92%;
+
+  --border-subtle: 220 14% 88%;
+  --border-strong: 220 9% 54%;
+
+  --text-primary: 224 30% 11%;
+  --text-secondary: 222 14% 32%;
+  --text-muted: 220 9% 40%;
+
+  --accent: 243 75% 56%;
+  --accent-hover: 243 75% 48%;
+  --accent-fg: 0 0% 100%;
+  --accent-subtle: 243 90% 95%;
+
+  --success: 152 70% 28%;
+  --warning: 32 95% 34%;
+  --danger: 0 72% 44%;
+  --info: 202 90% 34%;
+
+  --series-1: 202 100% 35%;
+  --series-2: 32 100% 40%;
+  --series-3: 164 100% 28%;
+  --series-4: 326 46% 48%;
+  --series-5: 8 85% 46%;
+  --series-6: 52 90% 32%;
+
+  --shadow-color: 220 30% 40%;
+  --overlay: 224 30% 10%;
+}
+
+:root {
+  /* Type: Inter for UI, JetBrains Mono for numbers/logs. Scale 12/13/14/16/20/28. */
+  --font-ui: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, 'Cascadia Mono', monospace;
+  --fs-12: 0.75rem;
+  --fs-13: 0.8125rem;
+  --fs-14: 0.875rem;
+  --fs-16: 1rem;
+  --fs-20: 1.25rem;
+  --fs-28: 1.75rem;
+
+  /* 4-pt grid: Tailwind spacing unit */
+  --space: 0.25rem;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+
+  --shadow-sm: 0 1px 2px hsl(var(--shadow-color) / 0.24);
+  --shadow-md: 0 4px 16px -4px hsl(var(--shadow-color) / 0.32);
+  --shadow-lg: 0 16px 40px -8px hsl(var(--shadow-color) / 0.45);
+
+  /* Motion: UI only, never on data. Zeroed under reduced motion. */
+  --dur-fast: 120ms;
+  --dur-base: 160ms;
+  --dur-slow: 200ms;
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  /* Density (Settings > Density toggles data-density) */
+  --row-h: 32px;
+  --control-h: 32px;
+}
+
+[data-density='compact'] {
+  --row-h: 26px;
+  --control-h: 28px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 0ms;
+    --dur-base: 0ms;
+    --dur-slow: 0ms;
+  }
+}
