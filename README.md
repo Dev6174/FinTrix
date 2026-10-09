@@ -2,6 +2,8 @@
 
 Policy stress-testing on an HPC agent-based market simulator. A regulator sets interest rate, margin requirement and circuit-breaker threshold, runs thousands of Monte Carlo scenarios on a C++/OpenMP/MPI engine, watches it live, and compares policies by risk.
 
+> Feature guide: [docs/FEATURES.md](docs/FEATURES.md).
+>
 > **Status: step 1 of 8.** The contract, design tokens, component library and gallery are done. The gateway, engine and screens arrive in later steps (see `docs/decisions.md`).
 
 ## Run
