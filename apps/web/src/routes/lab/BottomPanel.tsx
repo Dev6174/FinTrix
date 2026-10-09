@@ -32,6 +32,7 @@ export function BottomPanel({
   const result = useLab((s) => s.result);
   const status = useLab((s) => s.status);
   const error = useLab((s) => s.error);
+  const dates = useLab((s) => s.regime?.dates ?? null);
 
   const scenarioCols = useMemo<Column<ScenarioRow>[]>(
     () => [
@@ -83,7 +84,9 @@ export function BottomPanel({
 
   const eventCols = useMemo<Column<SimEvent>[]>(
     () => [
-      { id: 'tick', header: 'Tick', value: (e) => e.tick, width: 80, align: 'right' },
+      dates
+        ? { id: 'tick', header: 'Date', value: (e) => dates[e.tick] ?? String(e.tick), width: 110 }
+        : { id: 'tick', header: 'Tick', value: (e) => e.tick, width: 80, align: 'right' },
       {
         id: 'kind',
         header: 'Type',
@@ -100,7 +103,7 @@ export function BottomPanel({
       },
       { id: 'detail', header: 'Detail', value: (e) => e.detail, width: 520 },
     ],
-    [],
+    [dates],
   );
 
   return (
@@ -153,6 +156,7 @@ export function BottomPanel({
           )}
           {tab === 'events' && (
             <DataTable
+              key={dates ? 'daily' : 'synthetic'}
               label="Event log, scenario 0"
               rows={result?.events ?? []}
               columns={eventCols}

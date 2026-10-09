@@ -34,3 +34,13 @@ One line per trade-off. Newest at the bottom of each step.
 - **Watchlist = policy presets.** VaR 99 is the headline metric. Lower is better, so a drop versus BASE is green.
 - **KPI deltas: % change for ratios, absolute difference for counts** (halts, defaults). A % change on a near-zero count is meaningless.
 - **Runtime estimate is calibrated from a measured run** (1M scenario-ticks ≈ 0.33–0.42 s in Chrome), not guessed.
+
+## Real market periods (2007–09 crisis, 2024–25)
+
+- **Data: S&P 500 (^GSPC) and NIFTY 50 (^NSEI) daily OHLC from Yahoo Finance's public chart endpoint**, snapshotted by `apps/web/scripts/fetch-market-data.mjs` into `src/data/market/*.json`, so the demo works offline and is reproducible. Stooq was skipped because it blocks scripted downloads. Use is academic and non-commercial; the source and fetch date are shown in the UI.
+- **NIFTY 2007–09 starts 17 Sep 2007**: that's the source's history limit, and the UI says so.
+- **Snapshot verified against known history in tests**: S&P peak 2007-10-09, trough 2009-03-09, worst day 2008-10-15, drawdown about 57%.
+- **Calibration, not replay**: a 4-step fixed-point fit of noise scale and drift makes the Baseline policy reproduce the period's annualised volatility (hit within 0.1 pp in all four periods) and drift. Other policies run on the same fitted market, so their differences are due to the policy alone.
+- **Not fitted**: drawdown depth and path shape. The model's shocks are Gaussian (thin tails), so it understates crash depth (S&P −43% model vs −57% actual). The UI shows this in the Reality check rather than hiding it.
+- **The circuit breaker is now measured from the session open** (as on real exchanges). Before, a slow multi-month decline could trip it. With daily ticks, a breach halts for the rest of that day.
+- **Deltas vs BASE are plain differences** (percentage points or counts), never ratios. Ratios gave the wrong sign when VaR is negative (in the 2024–25 bull market the worst 1% still gains) and labelled a riskier policy "safer". Regression test in `delta.test.ts`.

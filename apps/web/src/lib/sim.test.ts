@@ -1,6 +1,8 @@
 import { DEFAULT_RUN_CONFIG } from '@fintrix/contract';
 import { describe, expect, it } from 'vitest';
-import { percentile, simulate, type SimInput } from './sim';
+import spx2007 from '../data/market/spx-2007.json';
+import { marketStats, type MarketFile } from './market';
+import { calibrate, percentile, simulate, type SimInput } from './sim';
 
 const base: SimInput = {
   policy: DEFAULT_RUN_CONFIG.policy,
@@ -60,5 +62,39 @@ describe('simulate', () => {
     const s = run().summary;
     expect(s.es95).toBeGreaterThanOrEqual(s.var95);
     expect(s.es99).toBeGreaterThanOrEqual(s.var99);
+  });
+});
+
+describe('calibrate to real data', () => {
+  it('baseline reproduces S&P 500 2007–09 volatility and drift', () => {
+    const spx = spx2007 as MarketFile;
+    const st = marketStats(spx);
+    const sim = { agents: 100_000, ticks: st.days, scenarios: 400, seed: 42, barTicks: 5 };
+    const regime = calibrate(
+      sim,
+      { volAnnual: st.volAnnual, driftAnnual: st.driftAnnual, ticksPerYear: 252 },
+      base.policy,
+    );
+    const out = simulate({ ...sim, policy: base.policy, regime });
+    const vol = out.rows.reduce((s, r) => s + r.volatility, 0) / out.rows.length;
+    const drift =
+      (out.rows.reduce((s, r) => s + Math.log(r.finalPrice / 100), 0) / out.rows.length) *
+      (252 / st.days);
+    console.log({
+      target: { vol: st.volAnnual, drift: st.driftAnnual },
+      got: { vol, drift },
+      regime,
+      summary: out.summary,
+    });
+    expect(vol).toBeGreaterThan(st.volAnnual * 0.9);
+    expect(vol).toBeLessThan(st.volAnnual * 1.1);
+    expect(Math.abs(drift - st.driftAnnual)).toBeLessThan(0.04);
+    // Policy still matters on the calibrated market.
+    const loose = simulate({
+      ...sim,
+      policy: { ...base.policy, marginRequirementPct: 5 },
+      regime,
+    }).summary;
+    expect(loose.var99).toBeGreaterThan(out.summary.var99);
   });
 });

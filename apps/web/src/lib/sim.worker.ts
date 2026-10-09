@@ -1,7 +1,9 @@
 /// <reference lib="webworker" />
-import { simulate, type SimInput, type SimOutput } from './sim';
+import { DEFAULT_RUN_CONFIG } from '@fintrix/contract';
+import { calibrate, simulate, type CalibrationTarget, type SimInput, type SimOutput } from './sim';
 
-export type WorkerIn = { id: number; input: SimInput };
+/** With `target`, the market is first calibrated so the Baseline policy matches that real period. */
+export type WorkerIn = { id: number; input: SimInput; target?: CalibrationTarget };
 export type WorkerOut =
   | { id: number; type: 'progress'; done: number; total: number }
   | { id: number; type: 'done'; result: SimOutput }
@@ -10,9 +12,11 @@ export type WorkerOut =
 declare const self: DedicatedWorkerGlobalScope;
 
 self.onmessage = (e: MessageEvent<WorkerIn>) => {
-  const { id, input } = e.data;
+  const { id, target } = e.data;
+  let { input } = e.data;
   const post = (m: WorkerOut, transfer: Transferable[] = []) => self.postMessage(m, transfer);
   try {
+    if (target) input = { ...input, regime: calibrate(input, target, DEFAULT_RUN_CONFIG.policy) };
     const result = simulate(input, (done) =>
       post({ id, type: 'progress', done, total: input.scenarios }),
     );

@@ -13,6 +13,18 @@ export interface SimInput {
   seed: number;
   /** Ticks aggregated into one OHLC bar. */
   barTicks: number;
+  /** Real-market calibration. Absent = synthetic minute-tick market. */
+  regime?: Regime;
+}
+
+/** Fitted by calibrate() so the Baseline policy reproduces a real period's trend and volatility. */
+export interface Regime {
+  /** 252 for daily ticks, 252*390 for minute ticks. */
+  ticksPerYear: number;
+  /** Annual log drift of the fundamental at the baseline rate. */
+  driftAnnual: number;
+  /** Multiplier on all noise. */
+  noiseScale: number;
 }
 
 export interface ScenarioRow {
@@ -52,8 +64,10 @@ export interface SimOutput {
 }
 
 const P0 = 100;
-const TICKS_PER_YEAR = 252 * 390; // one tick = one trading minute
-const HALT_TICKS = 30;
+const MINUTES_PER_DAY = 390;
+const TICKS_PER_YEAR = 252 * MINUTES_PER_DAY; // synthetic default: one tick = one trading minute
+const HALT_TICKS = 30; // ~Level-1 pause; capped at the end of the session
+const BASELINE_RATE = 4.5;
 const BANKS = 20;
 
 /** mulberry32: tiny, fast, deterministic. One stream per scenario so results never depend on scheduling. */
@@ -88,11 +102,17 @@ export function simulate(input: SimInput, onProgress?: (done: number) => void): 
   const cb = policy.circuitBreakerPct / 100;
 
   // Policy → behaviour. Higher rates slow fundamental growth; lower margin lets chartists lever up momentum.
-  const drift = (0.07 - 0.9 * (policy.interestRatePct / 100)) / TICKS_PER_YEAR;
-  const kFund = 0.002;
+  const tpy = input.regime?.ticksPerYear ?? TICKS_PER_YEAR;
+  const ticksPerDay = Math.max(1, Math.round(tpy / 252));
+  const noiseScale = input.regime?.noiseScale ?? 1;
+  const baseDrift = input.regime?.driftAnnual ?? 0.07 - 0.9 * (BASELINE_RATE / 100);
+  const drift = (baseDrift - 0.9 * ((policy.interestRatePct - BASELINE_RATE) / 100)) / tpy;
+  // Daily ticks: value traders close the gap in ~20 days; minute ticks: ~500 minutes.
+  const kFund = ticksPerDay === 1 ? 0.05 : 0.002;
+  const fundSigma = 0.0004 * noiseScale;
   const kChart = 0.09 * leverage; // near 1 at 10x leverage → momentum feedback almost self-sustaining
   // More agents → idiosyncratic noise averages out (≈ 1/√N), floor keeps markets alive.
-  const noiseSigma = 0.0009 * Math.max(0.35, Math.sqrt(100_000 / agents));
+  const noiseSigma = 0.0009 * noiseScale * Math.max(0.35, Math.sqrt(100_000 / agents));
 
   const closes = new Float32Array(scenarios * nBars);
   const bars = {
@@ -116,7 +136,8 @@ export function simulate(input: SimInput, onProgress?: (done: number) => void): 
     let logP = Math.log(P0);
     let logF = logP;
     let momentum = 0;
-    let ref = P0; // circuit-breaker reference price
+    let ref = P0; // circuit-breaker reference: the session open, like real market-wide breakers
+    let traded = 0;
     let halt = 0;
     let peak = P0;
     let maxDD = 0;
@@ -136,7 +157,8 @@ export function simulate(input: SimInput, onProgress?: (done: number) => void): 
           bars.volume[b] = 0;
         }
       }
-      logF += drift + 0.0004 * gauss();
+      if (t % ticksPerDay === 0 && halt === 0) ref = p; // new session
+      logF += drift + fundSigma * gauss();
 
       if (halt > 0) {
         halt--;
@@ -147,8 +169,12 @@ export function simulate(input: SimInput, onProgress?: (done: number) => void): 
         }
       } else {
         const demand = kFund * (logF - logP) + kChart * momentum + noiseSigma * gauss();
-        const ret = demand;
+        let ret = demand;
+        const limit = Math.log(1 + Math.sign(Math.exp(logP + ret) / ref - 1) * cb) + Math.log(ref);
+        const breached = Math.abs(Math.exp(logP + ret) / ref - 1) > cb;
+        if (breached) ret = limit - logP; // trading stops at the limit price
         logP += ret;
+        traded++;
         momentum = 0.94 * momentum + 0.06 * ret;
         const v = Math.abs(demand) * agents;
         volume += v;
@@ -157,16 +183,19 @@ export function simulate(input: SimInput, onProgress?: (done: number) => void): 
         p = Math.exp(logP);
         if (record) bars.volume[b]! += v;
 
-        if (Math.abs(p / ref - 1) > cb) {
+        if (breached) {
           cbCount++;
-          halt = HALT_TICKS;
+          // Halt for a pause, never past the end of the session (daily ticks: the rest of the day).
+          halt = Math.min(HALT_TICKS, ticksPerDay - 1 - (t % ticksPerDay));
           momentum = 0; // halt breaks the feedback loop: the whole point of a breaker
-          if (record)
+          if (record) {
+            bars.halted[b] = 1;
             events.push({
               tick: t,
               kind: 'circuit_breaker',
-              detail: `Moved ${((p / ref - 1) * 100).toFixed(1)}% from ${ref.toFixed(2)}; halted ${HALT_TICKS} ticks`,
+              detail: `Hit ${p > ref ? '+' : '−'}${(cb * 100).toFixed(1)}% limit from ${ref.toFixed(2)}; ${halt ? `halted ${halt} ticks` : 'halted for the rest of the session'}`,
             });
+          }
           ref = p;
         }
       }
@@ -186,7 +215,7 @@ export function simulate(input: SimInput, onProgress?: (done: number) => void): 
     // Banks hold the market levered up to the margin limit; capital buffer = margin.
     const bankLoss = -ret * Math.min(leverage, 5) * 0.2;
     const defaults = cascade(bankLoss, margin, r, record ? events : null, ticks);
-    const n = Math.max(1, ticks - cbCount * HALT_TICKS);
+    const n = Math.max(1, traded);
     const variance = Math.max(0, sumR2 / n - (sumR / n) ** 2);
 
     rows.push({
@@ -194,7 +223,7 @@ export function simulate(input: SimInput, onProgress?: (done: number) => void): 
       seed: sSeed,
       loss: bankLoss,
       finalPrice,
-      volatility: Math.sqrt(variance * TICKS_PER_YEAR),
+      volatility: Math.sqrt(variance * tpy),
       volume,
       maxDrawdown: maxDD,
       circuitBreakerTriggers: cbCount,
@@ -276,4 +305,41 @@ export function summarize(rows: readonly ScenarioRow[]): RiskSummary {
     circuitBreakerTriggers: rows.reduce((s, r) => s + r.circuitBreakerTriggers, 0),
     cascadingDefaults: mean((r) => r.defaults),
   };
+}
+
+export interface CalibrationTarget {
+  volAnnual: number;
+  driftAnnual: number;
+  ticksPerYear: number;
+}
+
+/**
+ * Fit noise and drift so the BASELINE policy reproduces a real period's annualised volatility and drift.
+ * Other policies then run on the same fitted market, so their differences come from the policy alone.
+ * Vol is ~linear in noise and realised drift ~linear in fundamental drift, so 4 fixed-point steps converge.
+ */
+export function calibrate(
+  base: Omit<SimInput, 'policy' | 'regime'>,
+  target: CalibrationTarget,
+  baseline: Policy,
+): Regime {
+  let regime: Regime = {
+    ticksPerYear: target.ticksPerYear,
+    driftAnnual: target.driftAnnual,
+    noiseScale: 1,
+  };
+  const pilot = { ...base, policy: baseline, scenarios: 80, seed: (base.seed ^ 0x5eed) >>> 0 };
+  for (let i = 0; i < 4; i++) {
+    const out = simulate({ ...pilot, regime });
+    const vol = out.rows.reduce((s, r) => s + r.volatility, 0) / out.rows.length;
+    const drift =
+      (out.rows.reduce((s, r) => s + Math.log(r.finalPrice / P0), 0) / out.rows.length) *
+      (target.ticksPerYear / base.ticks);
+    regime = {
+      ...regime,
+      noiseScale: regime.noiseScale * (vol > 0 ? target.volAnnual / vol : 1),
+      driftAnnual: regime.driftAnnual + (target.driftAnnual - drift),
+    };
+  }
+  return regime;
 }

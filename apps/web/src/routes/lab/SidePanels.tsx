@@ -2,6 +2,10 @@ import type { RiskSummary } from '@fintrix/contract';
 import { RotateCcw } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { cn } from '../../lib/cn';
+import { riskDelta } from '../../lib/delta';
+import { percentileRank } from '../../lib/market';
+import type { SimOutput } from '../../lib/sim';
+import type { LoadedRegime } from './regimes';
 import { Button } from '../../ui/Button';
 import { NumberField } from '../../ui/NumberField';
 import { Skeleton } from '../../ui/Skeleton';
@@ -30,7 +34,7 @@ export function Watchlist() {
   const base = watch.base?.var99;
 
   return (
-    <section aria-labelledby="wl-h" className="flex min-h-0 flex-1 flex-col">
+    <section aria-labelledby="wl-h" className="flex max-h-[45%] shrink-0 flex-col">
       <div className="flex h-9 shrink-0 items-center justify-between border-b border-border-subtle px-3">
         <h2 id="wl-h" className="text-sm font-semibold tracking-wide text-fg uppercase">
           Watchlist
@@ -39,7 +43,7 @@ export function Watchlist() {
       <div className="min-h-0 flex-1 overflow-auto">
         <div
           aria-hidden
-          className="grid h-7 grid-cols-[1fr_72px_72px] items-center px-3 text-xs text-fg-2"
+          className="grid h-7 grid-cols-[1fr_68px_80px] items-center px-3 text-xs text-fg-2"
         >
           <span>Policy</span>
           <span className="text-right">VaR 99</span>
@@ -48,17 +52,17 @@ export function Watchlist() {
         <ul aria-label="Policy watchlist">
           {PRESETS.map((p, i) => {
             const s = watch[p.id];
-            const delta = s && base ? s.var99 / base - 1 : null;
+            const delta = s && base !== undefined ? riskDelta(s.var99, base, 'fraction') : null;
             return (
               <li key={p.id}>
                 <button
                   type="button"
-                  aria-label={`${p.ticker} ${p.name}${s ? `, VaR 99 ${pct(s.var99)}` : ', not run yet'}${delta !== null && p.id !== 'base' ? `, ${(delta * 100).toFixed(1)}% vs baseline` : ''}`}
+                  aria-label={`${p.ticker} ${p.name}${s ? `, VaR 99 ${pct(s.var99)}` : ', not run yet'}${delta && p.id !== 'base' ? `, ${delta.text} vs baseline` : ''}`}
                   disabled={running}
                   onClick={() => loadPreset(p.id)}
                   aria-current={p.id === presetId || undefined}
                   className={cn(
-                    'grid h-row w-full grid-cols-[1fr_72px_72px] items-center px-3 text-left text-base hover:bg-bg-3 disabled:cursor-wait',
+                    'grid h-row w-full grid-cols-[1fr_68px_80px] items-center px-3 text-left text-base hover:bg-bg-3 disabled:cursor-wait',
                     p.id === presetId && 'bg-accent-subtle hover:bg-accent-subtle',
                   )}
                 >
@@ -75,14 +79,16 @@ export function Watchlist() {
                   <span
                     className={cn(
                       'num text-right',
-                      delta === null ? 'text-fg-3' : delta <= 0 ? 'text-up' : 'text-down',
+                      !delta || p.id === 'base'
+                        ? 'text-fg-3'
+                        : delta.safer
+                          ? 'text-up'
+                          : delta.riskier
+                            ? 'text-down'
+                            : 'text-fg-2',
                     )}
                   >
-                    {delta === null
-                      ? '—'
-                      : p.id === 'base'
-                        ? '0.0%'
-                        : `${delta > 0 ? '+' : ''}${(delta * 100).toFixed(1)}%`}
+                    {!delta ? '—' : p.id === 'base' ? 'ref' : delta.text}
                   </span>
                 </button>
               </li>
@@ -156,9 +162,10 @@ export function DetailsPanel() {
   const base = useLab((s) => s.watch.base);
   const presetId = useLab((s) => s.presetId);
   const status = useLab((s) => s.status);
+  const regime = useLab((s) => s.regime);
 
   return (
-    <section aria-labelledby="dt-h" className="flex min-h-0 flex-[1.4] flex-col">
+    <section aria-labelledby="dt-h" className="flex min-h-0 flex-1 flex-col">
       <div className="flex h-9 shrink-0 items-center border-b border-border-subtle px-3">
         <h2 id="dt-h" className="text-sm font-semibold tracking-wide text-fg uppercase">
           Risk details
@@ -173,14 +180,11 @@ export function DetailsPanel() {
           {KPIS.map(({ key, label, fmt, hint }) => {
             const v = result?.summary[key];
             const b = base?.[key];
-            // Counts compare as absolute differences (a % change on a small count is meaningless).
             const isCount = key === 'circuitBreakerTriggers' || key === 'cascadingDefaults';
             const d =
-              v === undefined || b === undefined ? null : isCount ? v - b : b ? v / b - 1 : null;
-            const deltaText =
-              d === null
-                ? ''
-                : `${d > 0 ? '+' : ''}${isCount ? fmt(d) : `${(d * 100).toFixed(1)}%`}`;
+              v === undefined || b === undefined
+                ? null
+                : riskDelta(v, b, isCount ? 'count' : 'fraction');
             return (
               <div
                 key={key}
@@ -194,14 +198,14 @@ export function DetailsPanel() {
                   ) : (
                     <>
                       <span className="num text-base text-fg">{fmt(v)}</span>
-                      {d !== null && presetId !== 'base' && Math.abs(d) > 0.0005 && (
+                      {d && presetId !== 'base' && (d.safer || d.riskier) && (
                         <span
                           className={cn(
-                            'num min-w-14 text-right text-xs',
-                            d <= 0 ? 'text-up' : 'text-down',
+                            'num min-w-16 text-right text-xs',
+                            d.safer ? 'text-up' : 'text-down',
                           )}
                         >
-                          {deltaText}
+                          {d.text}
                         </span>
                       )}
                     </>
@@ -220,6 +224,9 @@ export function DetailsPanel() {
             </span>
           </p>
         )}
+        {result && regime && (
+          <RealityCheck result={result} regime={regime} barTicks={sim.barTicks} />
+        )}
       </div>
     </section>
   );
@@ -232,6 +239,8 @@ function plainLanguage(s: RiskSummary): string {
     s.cascadingDefaults >= 1
       ? ` Bank failures spread: ~${s.cascadingDefaults.toFixed(1)} defaults per scenario.`
       : ' No meaningful contagion.';
+  if (s.var99 <= 0)
+    return `Low tail risk: even in the worst 1% of cases banks end with a gain (${pct(-s.var99, 1)}).${def}`;
   return `${sev}: in the worst 1% of cases banks lose ${pct(s.var99, 1)} or more.${def}`;
 }
 
@@ -243,6 +252,7 @@ export function PolicyPanel() {
   const reset = useLab((s) => s.reset);
   const run = useLab((s) => s.run);
   const running = useLab((s) => s.status === 'running');
+  const regime = useLab((s) => s.regime);
   const est = estimateMs(sim);
 
   return (
@@ -316,6 +326,8 @@ export function PolicyPanel() {
               max={10_000}
               step={100}
               integer
+              disabled={!!regime}
+              hint={regime ? `Fixed: ${regime.stats.days} trading days` : undefined}
             />
             <NumberField
               label="Scenarios"
@@ -347,6 +359,73 @@ export function PolicyPanel() {
           </Button>
         </div>
       </div>
+    </section>
+  );
+}
+
+/** Compares the calibrated model with what the real index actually did over the same period. */
+function RealityCheck({
+  result,
+  regime,
+  barTicks,
+}: {
+  result: SimOutput;
+  regime: LoadedRegime;
+  barTicks: number;
+}) {
+  const st = regime.stats;
+  const finals = result.rows.map((r) => r.finalPrice);
+  const actualFinal = regime.actual[regime.actual.length - 1]!;
+  const rank = percentileRank(finals, actualFinal);
+  const sorted = [...finals].sort((a, b) => a - b);
+  const median = sorted[Math.floor(sorted.length / 2)]!;
+  const meanDD = result.rows.reduce((a, r) => a + r.maxDrawdown, 0) / result.rows.length;
+  // Share of bars where the actual index sits inside the simulated 5–95% band.
+  const { p5, p95 } = result.band;
+  let inside = 0;
+  for (let i = 0; i < p5.length; i++) {
+    const a = regime.actual[Math.min((i + 1) * barTicks - 1, regime.actual.length - 1)]!;
+    if (a >= p5[i]! && a <= p95[i]!) inside++;
+  }
+  const coverage = inside / p5.length;
+  const rows: [string, string, string][] = [
+    ['Total return', pct(st.totalReturn, 1), pct(median / 100 - 1, 1)],
+    ['Max drawdown', pct(-st.maxDrawdown, 1), pct(-meanDD, 1)],
+    ['Volatility (ann.)', pct(st.volAnnual, 1), pct(result.summary.volatility, 1)],
+  ];
+  return (
+    <section aria-labelledby="rc-h" className="mt-4 rounded-sm border border-border-subtle p-2.5">
+      <h3 id="rc-h" className="mb-1.5 text-xs font-semibold tracking-wide text-fg uppercase">
+        Reality check · {regime.def.short}
+      </h3>
+      <table className="num w-full text-sm">
+        <thead>
+          <tr className="text-xs text-fg-2">
+            <th className="text-left font-normal" />
+            <th className="text-right font-normal text-series-2">Actual</th>
+            <th className="text-right font-normal">Model (median)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(([k, a, m]) => (
+            <tr key={k} className="h-6">
+              <td className="font-sans text-fg-2">{k}</td>
+              <td className="text-right text-fg">{a}</td>
+              <td className="text-right text-fg">{m}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="mt-2 text-xs text-fg-2">
+        Worst real day: {pct(st.worstDay, 1)} on {st.worstDayDate}. The actual index ended below{' '}
+        <b className="text-fg">{(rank * 100).toFixed(0)}%</b> of simulated paths and stayed inside
+        the 5–95% band <b className="text-fg">{(coverage * 100).toFixed(0)}%</b> of the time. Peak{' '}
+        {st.peakDate} → trough {st.troughDate}.
+      </p>
+      <p className="mt-1 text-xs text-fg-3">
+        {regime.file.source}, fetched {regime.file.fetchedAt}. Volatility and trend are calibrated
+        for the Baseline policy only; drawdown and path shape are not fitted.
+      </p>
     </section>
   );
 }

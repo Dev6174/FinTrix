@@ -1,6 +1,7 @@
 import {
   ChevronDown,
   ChevronUp,
+  Globe2,
   Layers,
   ListOrdered,
   Play,
@@ -20,6 +21,7 @@ import { Splitter } from '../../ui/Splitter';
 import { Tooltip } from '../../ui/Tooltip';
 import { BottomPanel } from './BottomPanel';
 import { DetailsPanel, PolicyPanel, Watchlist } from './SidePanels';
+import { REGIMES } from './regimes';
 import { PRESETS, estimateMs, useLab } from './store';
 
 const PriceChart = lazy(() => import('./PriceChart').then((m) => ({ default: m.PriceChart })));
@@ -37,6 +39,14 @@ export default function Lab() {
   const runAll = useLab((s) => s.runAll);
   const setSim = useLab((s) => s.setSim);
   const loadPreset = useLab((s) => s.loadPreset);
+  const regimeId = useLab((s) => s.regimeId);
+  const regime = useLab((s) => s.regime);
+  const setRegime = useLab((s) => s.setRegime);
+  const market = useMemo(
+    () => (regime ? { name: regime.def.short, dates: regime.dates, actual: regime.actual } : null),
+    [regime],
+  );
+  const daily = regimeId !== 'synthetic';
 
   const [rightW, setRightW] = usePersisted('fintrix.layout.right', 300);
   const [bottomH, setBottomH] = usePersisted('fintrix.layout.bottom', 240);
@@ -127,17 +137,66 @@ export default function Lab() {
             ))}
           </ul>
         </Popover>
+        <Popover
+          label="Choose market"
+          trigger={
+            <button
+              type="button"
+              disabled={running}
+              className="flex h-7 items-center gap-1.5 rounded-sm px-2 text-sm text-fg-2 hover:bg-bg-3 hover:text-fg disabled:opacity-50"
+            >
+              <Globe2 aria-hidden className="size-4" strokeWidth={1.5} />
+              {REGIMES.find((r) => r.id === regimeId)?.short}
+              <ChevronDown aria-hidden className="size-3.5" strokeWidth={1.5} />
+            </button>
+          }
+        >
+          <p className="mb-2 text-xs text-fg-2">
+            Real periods calibrate the model so the Baseline policy matches that market&apos;s
+            actual volatility and trend.
+          </p>
+          <ul className="-mx-2 flex flex-col">
+            {REGIMES.map((r) => (
+              <li key={r.id}>
+                <button
+                  type="button"
+                  onClick={() => void setRegime(r.id)}
+                  className={cn(
+                    'flex w-full flex-col rounded-sm px-2 py-1.5 text-left hover:bg-bg-3',
+                    r.id === regimeId && 'text-accent',
+                  )}
+                >
+                  <span className="text-base">{r.label}</span>
+                  {r.note && <span className="text-xs text-fg-2">{r.note}</span>}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </Popover>
         <ToolbarDivider />
-        <SegmentedControl
-          label="Bar size in ticks"
-          value={String(barTicks) as '5' | '10' | '50'}
-          onChange={(v) => setSim({ barTicks: Number(v) })}
-          segments={[
-            { value: '5', label: '5T' },
-            { value: '10', label: '10T' },
-            { value: '50', label: '50T' },
-          ]}
-        />
+        {daily ? (
+          <SegmentedControl
+            label="Bar size"
+            value={String(barTicks) as '1' | '5' | '21'}
+            onChange={(v) => setSim({ barTicks: Number(v) })}
+            segments={[
+              { value: '1', label: '1D' },
+              { value: '5', label: '1W' },
+              { value: '21', label: '1M' },
+            ]}
+          />
+        ) : (
+          <SegmentedControl
+            label="Bar size in ticks"
+            value={String(barTicks) as '5' | '10' | '50'}
+            onChange={(v) => setSim({ barTicks: Number(v) })}
+            segments={[
+              { value: '5', label: '5T' },
+              { value: '10', label: '10T' },
+              { value: '50', label: '50T' },
+            ]}
+          />
+        )}
         <ToolbarDivider />
         <Tooltip content="Show the 5–95% price band across all scenarios">
           <button
@@ -204,7 +263,13 @@ export default function Lab() {
             </div>
           )}
           <Suspense fallback={<Skeleton className="h-full rounded-none" />}>
-            <PriceChart result={result} ticker={ticker} barTicks={barTicks} showBand={showBand} />
+            <PriceChart
+              result={result}
+              ticker={ticker}
+              barTicks={barTicks}
+              showBand={showBand}
+              market={market}
+            />
           </Suspense>
         </section>
 

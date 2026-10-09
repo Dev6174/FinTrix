@@ -1,8 +1,9 @@
 import { DEFAULT_RUN_CONFIG, type Policy, type RiskSummary } from '@fintrix/contract';
 import { create } from 'zustand';
-import type { SimInput, SimOutput } from '../../lib/sim';
+import type { CalibrationTarget, SimInput, SimOutput } from '../../lib/sim';
 import type { WorkerIn, WorkerOut } from '../../lib/sim.worker';
 import { toast } from '../../ui/Toast';
+import { REGIMES, loadRegime, type LoadedRegime, type RegimeId } from './regimes';
 
 export interface Preset {
   id: string;
@@ -54,6 +55,9 @@ export const estimateMs = (s: Sim) => s.ticks * s.scenarios * 0.0004;
 type Status = 'idle' | 'running' | 'done' | 'error';
 
 interface LabState {
+  regimeId: RegimeId;
+  /** Loaded market data for regimeId (null for synthetic or while loading). */
+  regime: LoadedRegime | null;
   presetId: string | null;
   policy: Policy;
   sim: Sim;
@@ -67,32 +71,41 @@ interface LabState {
   setSim: (s: Partial<Sim>) => void;
   loadPreset: (id: string) => void;
   reset: () => void;
+  setRegime: (id: RegimeId) => Promise<void>;
   run: () => Promise<SimOutput | null>;
   runAll: () => Promise<void>;
 }
 
 const KEY = 'fintrix.lab';
-function loadSaved(): Pick<LabState, 'policy' | 'sim' | 'presetId'> {
+type Saved = Pick<LabState, 'policy' | 'sim' | 'presetId' | 'regimeId'>;
+function loadSaved(): Saved {
   try {
-    const v = JSON.parse(localStorage.getItem(KEY) ?? 'null') as Pick<
-      LabState,
-      'policy' | 'sim' | 'presetId'
-    > | null;
+    const v = JSON.parse(localStorage.getItem(KEY) ?? 'null') as Partial<Saved> | null;
     if (v?.policy && v.sim)
       return {
         policy: { ...DEFAULT_RUN_CONFIG.policy, ...v.policy },
         sim: { ...DEFAULT_SIM, ...v.sim },
         presetId: v.presetId ?? null,
+        regimeId: REGIMES.some((r) => r.id === v.regimeId) ? v.regimeId! : 'synthetic',
       };
   } catch {
     /* fall through to defaults */
   }
-  return { policy: DEFAULT_RUN_CONFIG.policy, sim: DEFAULT_SIM, presetId: 'base' };
+  return {
+    policy: DEFAULT_RUN_CONFIG.policy,
+    sim: DEFAULT_SIM,
+    presetId: 'base',
+    regimeId: 'synthetic',
+  };
 }
 
 let worker: Worker | null = null;
 let nextId = 1;
-function runInWorker(input: SimInput, onProgress: (p: number) => void): Promise<SimOutput> {
+function runInWorker(
+  input: SimInput,
+  target: CalibrationTarget | undefined,
+  onProgress: (p: number) => void,
+): Promise<SimOutput> {
   worker ??= new Worker(new URL('../../lib/sim.worker.ts', import.meta.url), { type: 'module' });
   const id = nextId++;
   const w = worker;
@@ -106,21 +119,22 @@ function runInWorker(input: SimInput, onProgress: (p: number) => void): Promise<
       else reject(new Error(m.message));
     };
     w.addEventListener('message', onMsg);
-    w.postMessage({ id, input } satisfies WorkerIn);
+    w.postMessage((target ? { id, input, target } : { id, input }) satisfies WorkerIn);
   });
 }
 
 export const useLab = create<LabState>((set, get) => {
   const persist = () => {
-    const { policy, sim, presetId } = get();
+    const { policy, sim, presetId, regimeId } = get();
     try {
-      localStorage.setItem(KEY, JSON.stringify({ policy, sim, presetId }));
+      localStorage.setItem(KEY, JSON.stringify({ policy, sim, presetId, regimeId }));
     } catch {
       /* storage blocked: session-only */
     }
   };
   return {
     ...loadSaved(),
+    regime: null,
     status: 'idle',
     progress: 0,
     error: null,
@@ -144,15 +158,49 @@ export const useLab = create<LabState>((set, get) => {
       void get().run();
     },
     reset: () => {
-      set({ policy: DEFAULT_RUN_CONFIG.policy, sim: DEFAULT_SIM, presetId: 'base' });
+      const { regime } = get();
+      set({
+        policy: DEFAULT_RUN_CONFIG.policy,
+        sim: regime ? { ...DEFAULT_SIM, ticks: regime.stats.days, barTicks: 5 } : DEFAULT_SIM,
+        presetId: 'base',
+      });
       persist();
+    },
+    setRegime: async (id) => {
+      if (get().status === 'running') return;
+      // A different market makes old watchlist numbers incomparable.
+      set({ regimeId: id, regime: null, watch: {}, result: null });
+      if (id === 'synthetic') {
+        set({ sim: { ...get().sim, ticks: DEFAULT_SIM.ticks, barTicks: DEFAULT_SIM.barTicks } });
+      } else {
+        const regime = await loadRegime(id);
+        if (get().regimeId !== id) return; // switched again meanwhile
+        // One tick = one trading day on the real calendar; weekly candles.
+        set({ regime, sim: { ...get().sim, ticks: regime.stats.days, barTicks: 5 } });
+      }
+      persist();
+      await get().run();
     },
     run: async () => {
       if (get().status === 'running') return null;
-      const { policy, sim, presetId } = get();
       set({ status: 'running', progress: 0, error: null });
       try {
-        const result = await runInWorker({ ...sim, policy }, (progress) => set({ progress }));
+        const { regimeId } = get();
+        if (regimeId !== 'synthetic' && !get().regime) {
+          const regime = await loadRegime(regimeId);
+          set({ regime, sim: { ...get().sim, ticks: regime.stats.days } });
+        }
+        const { policy, sim, presetId, regime } = get();
+        const target = regime
+          ? {
+              volAnnual: regime.stats.volAnnual,
+              driftAnnual: regime.stats.driftAnnual,
+              ticksPerYear: 252,
+            }
+          : undefined;
+        const result = await runInWorker({ ...sim, policy }, target, (progress) =>
+          set({ progress }),
+        );
         set((s) => ({
           status: 'done',
           progress: 1,

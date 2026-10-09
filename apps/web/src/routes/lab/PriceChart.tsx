@@ -8,20 +8,29 @@ import {
   type SeriesMarker,
   type UTCTimestamp,
 } from 'lightweight-charts';
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useUi } from '../../app/theme';
 import { hslToRgb, parseHsl } from '../../lib/color';
 import type { SimOutput } from '../../lib/sim';
 
-/** Token → "rgb(...)" (the chart library does not parse hsl). */
+/** Token → "rgba(...)" (the chart library does not parse hsl). */
 function token(name: string, alpha = 1): string {
   const raw = getComputedStyle(document.documentElement).getPropertyValue(`--${name}`).trim();
   const [r, g, b] = hslToRgb(parseHsl(raw)).map((c) => Math.round(c * 255));
   return `rgba(${r},${g},${b},${alpha})`;
 }
 
-// Sim tick = one trading minute, starting at a fixed 09:30 ET open so axis labels read like a session.
+// Synthetic mode: tick = one trading minute from a fixed 09:30 ET open so axis labels read like a session.
 const T0 = Date.UTC(2025, 0, 2, 14, 30) / 1000;
+
+export interface ChartMarket {
+  /** e.g. "S&P 500 · 2007–09" */
+  name: string;
+  /** One ISO date per simulated tick (tick = trading day). */
+  dates: string[];
+  /** Actual closes rebased to 100. */
+  actual: Float32Array;
+}
 
 interface Series {
   candles: ISeriesApi<'Candlestick'>;
@@ -29,6 +38,25 @@ interface Series {
   p5: ISeriesApi<'Line'>;
   p50: ISeriesApi<'Line'>;
   p95: ISeriesApi<'Line'>;
+  actual: ISeriesApi<'Line'>;
+}
+
+/** Bar index → chart time. Real calendar when a market is loaded, synthetic minutes otherwise. */
+function makeTime(barTicks: number, market: ChartMarket | null) {
+  return (i: number): UTCTimestamp =>
+    (market
+      ? Date.parse(`${market.dates[Math.min(i * barTicks, market.dates.length - 1)]}T00:00:00Z`) /
+        1000
+      : T0 + i * barTicks * 60) as UTCTimestamp;
+}
+
+/** Actual close at the end of each bar, aligned with the simulator's bar closes. */
+function actualPerBar(market: ChartMarket, nBars: number, barTicks: number): Float32Array {
+  const a = market.actual;
+  return Float32Array.from(
+    { length: nBars },
+    (_, i) => a[Math.min((i + 1) * barTicks - 1, a.length - 1)]!,
+  );
 }
 
 export function PriceChart({
@@ -36,17 +64,23 @@ export function PriceChart({
   ticker,
   barTicks,
   showBand,
+  market,
 }: {
   result: SimOutput | null;
   ticker: string;
   barTicks: number;
   showBand: boolean;
+  market: ChartMarket | null;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const legend = useRef<HTMLDivElement>(null);
   const chart = useRef<IChartApi | null>(null);
   const series = useRef<Series | null>(null);
   const theme = useUi((s) => s.theme);
+  const actual = useMemo(
+    () => (market && result ? actualPerBar(market, result.bars.close.length, barTicks) : null),
+    [market, result, barTicks],
+  );
 
   // Create once.
   useEffect(() => {
@@ -57,18 +91,18 @@ export function PriceChart({
       timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false, rightOffset: 6 },
       handleScale: { axisPressedMouseMove: true },
     });
-    const band = (style: LineStyle) =>
+    const line = (style: LineStyle, width: 1 | 2 = 1) =>
       c.addLineSeries({
-        lineWidth: 1,
+        lineWidth: width,
         lineStyle: style,
         priceLineVisible: false,
         lastValueVisible: false,
         crosshairMarkerVisible: false,
       });
     series.current = {
-      p95: band(LineStyle.Dashed),
-      p50: band(LineStyle.Dotted),
-      p5: band(LineStyle.Dashed),
+      p95: line(LineStyle.Dashed),
+      p50: line(LineStyle.Dotted),
+      p5: line(LineStyle.Dashed),
       volume: c.addHistogramSeries({
         priceScaleId: 'vol',
         priceFormat: { type: 'volume' },
@@ -76,6 +110,7 @@ export function PriceChart({
         priceLineVisible: false,
       }),
       candles: c.addCandlestickSeries({ borderVisible: false }),
+      actual: line(LineStyle.Solid, 2),
     };
     c.priceScale('vol').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
     chart.current = c;
@@ -86,7 +121,7 @@ export function PriceChart({
     };
   }, []);
 
-  // Theme colours.
+  // Theme colours, then data (bar colours depend on theme too).
   useEffect(() => {
     const c = chart.current;
     const s = series.current;
@@ -115,18 +150,18 @@ export function PriceChart({
     });
     for (const k of ['p5', 'p50', 'p95'] as const)
       s[k].applyOptions({ color: token('series-1', k === 'p50' ? 0.9 : 0.6) });
-    // Data colours depend on the theme too; re-run the data effect.
-    if (result) setData(s, result, barTicks);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- result/barTicks handled by data effect
+    s.actual.applyOptions({ color: token('series-2') });
+    if (result) setData(s, result, barTicks, market, actual);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- data deps handled by the data effect
   }, [theme]);
 
-  // Data.
   useEffect(() => {
     const s = series.current;
     if (!s || !result) return;
-    setData(s, result, barTicks);
+    setData(s, result, barTicks, market, actual);
+    chart.current?.applyOptions({ timeScale: { timeVisible: !market } });
     chart.current?.timeScale().fitContent();
-  }, [result, barTicks]);
+  }, [result, barTicks, market, actual]);
 
   useEffect(() => {
     const s = series.current;
@@ -137,32 +172,43 @@ export function PriceChart({
   // Legend: direct DOM writes on crosshair move, no React re-render.
   useEffect(() => {
     const c = chart.current;
-    const s = series.current;
     const el = legend.current;
-    if (!c || !s || !el || !result) return;
+    if (!c || !el || !result) return;
     const { open, high, low, close } = result.bars;
+    const time = makeTime(barTicks, market);
+    const index = new Map<number, number>();
+    for (let i = 0; i < close.length; i++) index.set(time(i), i);
     const write = (i: number) => {
       const o = open[i]!;
       const cl = close[i]!;
       const chg = (cl / o - 1) * 100;
       const dir = cl >= o ? 'text-up' : 'text-down';
+      const date = market
+        ? `<span class="text-fg-2">${market.dates[Math.min(i * barTicks, market.dates.length - 1)]}</span> `
+        : '';
+      const act = actual?.[i];
       el.innerHTML =
+        date +
         `<span class="text-fg-2">O</span> <span class="${dir}">${o.toFixed(2)}</span> ` +
         `<span class="text-fg-2">H</span> <span class="${dir}">${high[i]!.toFixed(2)}</span> ` +
         `<span class="text-fg-2">L</span> <span class="${dir}">${low[i]!.toFixed(2)}</span> ` +
         `<span class="text-fg-2">C</span> <span class="${dir}">${cl.toFixed(2)}</span> ` +
         `<span class="${dir}">${chg >= 0 ? '+' : ''}${chg.toFixed(2)}%</span>` +
-        (result.bars.halted[i] ? ' <span class="text-warning">HALTED</span>' : '');
+        (result.bars.halted[i] ? ' <span class="text-warning">HALTED</span>' : '') +
+        (act !== undefined ? ` <span class="text-series-2">Actual ${act.toFixed(2)}</span>` : '');
     };
     write(close.length - 1);
     const onMove = (p: { time?: unknown }) => {
-      const i =
-        typeof p.time === 'number' ? Math.round((p.time - T0) / (barTicks * 60)) : close.length - 1;
-      write(Math.max(0, Math.min(close.length - 1, i)));
+      const i = typeof p.time === 'number' ? index.get(p.time) : undefined;
+      write(i ?? close.length - 1);
     };
     c.subscribeCrosshairMove(onMove);
     return () => c.unsubscribeCrosshairMove(onMove);
-  }, [result, barTicks]);
+  }, [result, barTicks, market, actual]);
+
+  const unit = market
+    ? (({ 1: '1D', 5: '1W', 21: '1M' } as Record<number, string>)[barTicks] ?? `${barTicks}D`)
+    : `${barTicks}T`;
 
   return (
     <div className="relative h-full w-full">
@@ -170,24 +216,40 @@ export function PriceChart({
       <div className="pointer-events-none absolute top-2 left-3 z-10 flex flex-col gap-0.5">
         <div className="flex items-baseline gap-2">
           <span className="text-md font-semibold text-fg">{ticker}</span>
-          <span className="text-sm text-fg-2">· {barTicks}T · FinTrix Sim · scenario 0</span>
+          <span className="text-sm text-fg-2">
+            · {unit} · {market ? `${market.name} (calibrated)` : 'Synthetic market'} · scenario 0
+          </span>
         </div>
         <div ref={legend} className="num text-xs" />
-        {showBand && (
-          <div className="text-xs text-fg-2">
-            <span className="text-series-1">┅</span> P5 / P95 band{' '}
-            <span className="text-series-1">┄</span> median across scenarios
-          </div>
-        )}
+        <div className="flex gap-3 text-xs text-fg-2">
+          {showBand && (
+            <span>
+              <span className="text-series-1">┅</span> P5–P95 band{' '}
+              <span className="text-series-1">┄</span> median
+            </span>
+          )}
+          {market && (
+            <span>
+              <span className="text-series-2">━</span> Actual {market.name.split(' · ')[0]}, rebased
+              to 100
+            </span>
+          )}
+        </div>
       </div>
-      {result && <p className="sr-only">{chartSummary(result)}</p>}
+      {result && <p className="sr-only">{chartSummary(result, actual)}</p>}
     </div>
   );
 }
 
-function setData(s: Series, r: SimOutput, barTicks: number) {
+function setData(
+  s: Series,
+  r: SimOutput,
+  barTicks: number,
+  market: ChartMarket | null,
+  actual: Float32Array | null,
+) {
   const { open, high, low, close, volume, halted } = r.bars;
-  const t = (i: number) => (T0 + i * barTicks * 60) as UTCTimestamp;
+  const t = makeTime(barTicks, market);
   const up = token('up', 0.45);
   const down = token('down', 0.45);
   const warn = token('warning');
@@ -210,6 +272,7 @@ function setData(s: Series, r: SimOutput, barTicks: number) {
   );
   for (const k of ['p5', 'p50', 'p95'] as const)
     s[k].setData(Array.from(r.band[k], (v, i) => ({ time: t(i), value: v })));
+  s.actual.setData(actual ? Array.from(actual, (v, i) => ({ time: t(i), value: v })) : []);
 
   const markers: SeriesMarker<UTCTimestamp>[] = [];
   for (let i = 0; i < halted.length; i++)
@@ -225,7 +288,7 @@ function setData(s: Series, r: SimOutput, barTicks: number) {
 }
 
 /** Text alternative for screen readers. */
-function chartSummary(r: SimOutput): string {
+function chartSummary(r: SimOutput, actual: Float32Array | null): string {
   const c = r.bars.close;
   const first = r.bars.open[0] ?? 0;
   const last = c[c.length - 1] ?? 0;
@@ -236,5 +299,8 @@ function chartSummary(r: SimOutput): string {
     lo = Math.min(lo, r.bars.low[i]!);
   }
   const halts = r.events.filter((e) => e.kind === 'circuit_breaker').length;
-  return `Scenario 0 price moved from ${first.toFixed(2)} to ${last.toFixed(2)} over ${c.length} bars, ranging ${lo.toFixed(2)} to ${hi.toFixed(2)}, with ${halts} circuit-breaker halts.`;
+  const act = actual
+    ? ` The actual index, rebased to 100, ended at ${actual[actual.length - 1]!.toFixed(2)}.`
+    : '';
+  return `Scenario 0 price moved from ${first.toFixed(2)} to ${last.toFixed(2)} over ${c.length} bars, ranging ${lo.toFixed(2)} to ${hi.toFixed(2)}, with ${halts} circuit-breaker halts.${act}`;
 }
