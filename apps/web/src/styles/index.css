@@ -21,6 +21,8 @@
   --color-warning: hsl(var(--warning));
   --color-danger: hsl(var(--danger));
   --color-info: hsl(var(--info));
+  --color-up: hsl(var(--up));
+  --color-down: hsl(var(--down));
   --color-series-1: hsl(var(--series-1));
   --color-series-2: hsl(var(--series-2));
   --color-series-3: hsl(var(--series-3));
@@ -76,8 +78,8 @@
     background: hsl(var(--bg-0));
     color: hsl(var(--text-primary));
     font-family: var(--font-ui);
-    font-size: var(--fs-14);
-    line-height: 1.25rem;
+    font-size: var(--fs-13);
+    line-height: 1.125rem;
     font-feature-settings: 'cv11', 'ss01';
     -webkit-font-smoothing: antialiased;
   }

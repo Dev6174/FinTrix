@@ -24,3 +24,13 @@ One line per trade-off. Newest at the bottom of each step.
 ## Environment notes
 
 - Local `g++` is MinGW 6.3: too old for complete C++17 and has no usable OpenMP. Step 4 builds the engine in Docker (GCC 13 + OpenMPI) or WSL; native Windows builds are not a target.
+
+## Trading-terminal redesign (Policy Lab)
+
+- **Visual language follows TradingView** (navy panels on a darker gutter, hairline borders, blue accent, green/red up/down, 13px base, dense rows). FinTrix keeps its own name and logo, with no TradingView branding.
+- **Chart library: `lightweight-charts` 4.2 (TradingView's open-source Apache-2.0 library)**, not uPlot. It ships candlesticks, volume, markers and a crosshair that match the look. Its attribution logo stays on, as its licence asks. It is lazy-loaded (54 KB gz), so initial JS is still 104 KB.
+- **The chart legend updates by direct DOM writes on crosshair move**, not React state, so hovering never re-renders the tree.
+- **In-browser synthetic engine (`lib/sim.ts`, Web Worker)** lets the Lab demo work before the C++ engine exists. It is labelled "Synthetic" in the UI and aggregates agents by type rather than simulating each one. It has the same inputs and outputs as the contract and is replaced in step 4.
+- **Watchlist = policy presets.** VaR 99 is the headline metric. Lower is better, so a drop versus BASE is green.
+- **KPI deltas: % change for ratios, absolute difference for counts** (halts, defaults). A % change on a near-zero count is meaningless.
+- **Runtime estimate is calibrated from a measured run** (1M scenario-ticks ≈ 0.33–0.42 s in Chrome), not guessed.

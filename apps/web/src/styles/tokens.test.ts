@@ -42,6 +42,10 @@ describe.each(Object.entries(themes))('%s theme', (_name, t) => {
         expect(c(`series-${i}`, bg), `series-${i} on ${bg}`).toBeGreaterThanOrEqual(3);
   });
 
+  it('up/down candle colours ≥ 3:1 on chart surface', () => {
+    for (const k of ['up', 'down']) expect(c(k, 'bg-1'), k).toBeGreaterThanOrEqual(3);
+  });
+
   it('strong border ≥ 3:1 on bg-1 (input outlines)', () => {
     expect(c('border-strong', 'bg-1')).toBeGreaterThanOrEqual(3);
   });

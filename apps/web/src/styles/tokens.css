@@ -1,5 +1,6 @@
 /*
  * FinTrix design tokens. The only place raw colour / size values live.
+ * Visual language: trading-terminal (navy panels, hairline borders, blue accent, green/red P&L).
  * Colours are bare HSL triplets so they compose with alpha: hsl(var(--accent) / 0.2).
  * tokens.test.ts parses this file and enforces WCAG 2.2 AA contrast in both themes.
  */
@@ -8,81 +9,85 @@
 [data-theme='dark'] {
   color-scheme: dark;
 
-  /* Surfaces: 0 = app background, 3 = raised/hover */
-  --bg-0: 224 26% 6%;
-  --bg-1: 224 22% 9%;
-  --bg-2: 224 19% 12%;
-  --bg-3: 224 16% 16%;
+  /* 0 = gutters between panels, 1 = panel/chart, 2 = toolbar/raised, 3 = hover */
+  --bg-0: 225 27% 7%;
+  --bg-1: 225 26% 11%;
+  --bg-2: 223 20% 15%;
+  --bg-3: 223 16% 20%;
 
-  --border-subtle: 224 14% 19%;
-  --border-strong: 224 10% 44%;
+  --border-subtle: 223 15% 20%;
+  --border-strong: 223 10% 44%;
 
-  --text-primary: 220 22% 94%;
-  --text-secondary: 220 13% 74%;
-  --text-muted: 220 10% 62%;
+  --text-primary: 225 14% 85%;
+  --text-secondary: 226 10% 70%;
+  --text-muted: 228 8% 62%;
 
-  /* One accent: electric indigo */
-  --accent: 240 100% 74%;
-  --accent-hover: 240 100% 80%;
-  --accent-fg: 224 26% 6%;
-  --accent-subtle: 240 60% 22%;
+  --accent: 224 100% 66%;
+  --accent-hover: 224 100% 72%;
+  --accent-fg: 225 27% 7%;
+  --accent-subtle: 224 60% 20%;
 
-  --success: 152 56% 52%;
-  --warning: 38 92% 60%;
-  --danger: 0 86% 68%;
-  --info: 199 89% 62%;
+  /* Up / down (also success / danger) */
+  --success: 167 78% 42%;
+  --warning: 38 92% 58%;
+  --danger: 357 88% 66%;
+  --info: 199 89% 60%;
+  --up: 167 85% 37%;
+  --down: 357 85% 57%;
 
   /* Policy series, Okabe–Ito hues (colour-blind safe). Max 6. Same order everywhere. */
-  --series-1: 199 70% 62%;
+  --series-1: 224 100% 66%;
   --series-2: 36 100% 52%;
   --series-3: 164 100% 38%;
   --series-4: 326 46% 68%;
   --series-5: 24 100% 58%;
   --series-6: 56 80% 62%;
 
-  --shadow-color: 224 40% 2%;
-  --overlay: 224 30% 3%;
+  --shadow-color: 225 40% 2%;
+  --overlay: 225 30% 3%;
 }
 
 [data-theme='light'] {
   color-scheme: light;
 
-  --bg-0: 220 20% 96%;
+  --bg-0: 220 20% 90%;
   --bg-1: 0 0% 100%;
-  --bg-2: 220 20% 98%;
-  --bg-3: 220 16% 92%;
+  --bg-2: 225 33% 97%;
+  --bg-3: 223 24% 92%;
 
-  --border-subtle: 220 14% 88%;
-  --border-strong: 220 9% 54%;
+  --border-subtle: 223 19% 90%;
+  --border-strong: 223 9% 54%;
 
-  --text-primary: 224 30% 11%;
-  --text-secondary: 222 14% 32%;
-  --text-muted: 220 9% 40%;
+  --text-primary: 225 26% 11%;
+  --text-secondary: 226 12% 32%;
+  --text-muted: 228 8% 40%;
 
-  --accent: 243 75% 56%;
-  --accent-hover: 243 75% 48%;
+  --accent: 224 100% 48%;
+  --accent-hover: 224 100% 42%;
   --accent-fg: 0 0% 100%;
-  --accent-subtle: 243 90% 95%;
+  --accent-subtle: 224 100% 95%;
 
-  --success: 152 70% 28%;
+  --success: 167 90% 25%;
   --warning: 32 95% 34%;
-  --danger: 0 72% 44%;
+  --danger: 357 75% 44%;
   --info: 202 90% 34%;
+  --up: 167 90% 31%;
+  --down: 357 88% 55%;
 
-  --series-1: 202 100% 35%;
+  --series-1: 224 100% 48%;
   --series-2: 32 100% 40%;
   --series-3: 164 100% 28%;
   --series-4: 326 46% 48%;
   --series-5: 8 85% 46%;
   --series-6: 52 90% 32%;
 
-  --shadow-color: 220 30% 40%;
-  --overlay: 224 30% 10%;
+  --shadow-color: 225 30% 40%;
+  --overlay: 225 30% 10%;
 }
 
 :root {
-  /* Type: Inter for UI, JetBrains Mono for numbers/logs. Scale 12/13/14/16/20/28. */
-  --font-ui: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  /* Type: Inter for UI, JetBrains Mono for numbers/logs. Scale 12/13/14/16/20/28; base is 13 (terminal density). */
+  --font-ui: 'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-mono: 'JetBrains Mono Variable', ui-monospace, 'Cascadia Mono', monospace;
   --fs-12: 0.75rem;
   --fs-13: 0.8125rem;
@@ -94,13 +99,13 @@
   /* 4-pt grid: Tailwind spacing unit */
   --space: 0.25rem;
 
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
 
   --shadow-sm: 0 1px 2px hsl(var(--shadow-color) / 0.24);
-  --shadow-md: 0 4px 16px -4px hsl(var(--shadow-color) / 0.32);
-  --shadow-lg: 0 16px 40px -8px hsl(var(--shadow-color) / 0.45);
+  --shadow-md: 0 4px 16px -4px hsl(var(--shadow-color) / 0.36);
+  --shadow-lg: 0 12px 32px -8px hsl(var(--shadow-color) / 0.5);
 
   /* Motion: UI only, never on data. Zeroed under reduced motion. */
   --dur-fast: 120ms;
@@ -109,13 +114,13 @@
   --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
 
   /* Density (Settings > Density toggles data-density) */
-  --row-h: 32px;
-  --control-h: 32px;
+  --row-h: 28px;
+  --control-h: 30px;
 }
 
 [data-density='compact'] {
-  --row-h: 26px;
-  --control-h: 28px;
+  --row-h: 24px;
+  --control-h: 26px;
 }
 
 @media (prefers-reduced-motion: reduce) {
